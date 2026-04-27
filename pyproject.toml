@@ -1,0 +1,9 @@
+[project]
+name = "local-trading-app"
+version = "0.1.0"
+description = "Local paper-trading research dashboard."
+requires-python = ">=3.11,<3.12"
+
+[tool.pytest.ini_options]
+pythonpath = ["src"]
+testpaths = ["tests"]

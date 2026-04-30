@@ -53,6 +53,10 @@ from trading_app.pre_trade_risk import (
     validation_results_to_dataframe,
 )
 from trading_app.risk import RiskLimits, apply_risk_limits
+from trading_app.scanner2.background_snapshot import (
+    BackgroundSnapshotStatus,
+    start_background_snapshot_service,
+)
 from trading_app.scanner2.config import load_config as load_scanner2_config
 from trading_app.scanner2.output_builder import output_columns as scanner2_output_columns
 from trading_app.scanner2.polygon_client import PolygonRestClient as Scanner2PolygonRestClient
@@ -77,6 +81,8 @@ SCANNER_RESULTS_KEY = "price_action_scanner_results"
 TRADE_DECISIONS_KEY = "intraday_trade_decisions"
 SUBMITTED_ORDERS_KEY = "submitted_orders"
 TRADE_CYCLE_SUMMARY_KEY = "trade_cycle_summary"
+SCANNER2_SNAPSHOT_INTERVAL_MINUTES = 15
+SCANNER2_SNAPSHOT_POLL_SECONDS = 30
 
 
 @st.cache_data(ttl=900)
@@ -380,11 +386,7 @@ def scanner_result_columns(provider: str) -> list[str]:
 def render_scanner2_tab(settings) -> None:
     st.subheader("Scanner2")
     st.caption("Polygon.io premarket momentum watchlist generator only. This tab does not place trades.")
-    st.code(
-        "$env:PYTHONPATH='src'\n"
-        ".\\.venv\\Scripts\\python.exe -m trading_app.scanner2.snapshot_service",
-        language="powershell",
-    )
+    render_scanner2_snapshot_service_status()
     control_cols = st.columns(7)
     min_price = control_cols[0].number_input("Min price", min_value=0.01, value=2.0, step=0.5, key="scanner2_min_price")
     max_price = control_cols[1].number_input("Max price", min_value=0.01, value=50.0, step=1.0, key="scanner2_max_price")
@@ -467,6 +469,41 @@ def render_scanner2_tab(settings) -> None:
     if last_run:
         st.caption(f"Last Scanner2 run: {last_run}")
     st.caption(f"Current snapshot path: {snapshot_path(market_now())}")
+
+
+def scanner2_auto_snapshot_enabled(settings) -> bool:
+    """Only auto-run the snapshot worker outside local development."""
+    return settings.app_env.strip().lower() != "local"
+
+
+def start_scanner2_snapshot_worker(settings) -> BackgroundSnapshotStatus:
+    config = replace(
+        load_scanner2_config(),
+        polygon_api_key=settings.polygon_api_key,
+    )
+    return start_background_snapshot_service(
+        config,
+        enabled=scanner2_auto_snapshot_enabled(settings),
+        interval_minutes=SCANNER2_SNAPSHOT_INTERVAL_MINUTES,
+        poll_seconds=SCANNER2_SNAPSHOT_POLL_SECONDS,
+    )
+
+
+def render_scanner2_snapshot_service_status() -> None:
+    status = st.session_state.get("scanner2_snapshot_service_status")
+    if not isinstance(status, BackgroundSnapshotStatus):
+        return
+
+    status_cols = st.columns(4)
+    status_cols[0].metric("Auto snapshots", "On" if status.enabled else "Off")
+    status_cols[1].metric("Service", "Running" if status.running else "Stopped")
+    status_cols[2].metric("Interval", f"{status.interval_minutes} min")
+    status_cols[3].metric("Started", format_market_time(status.started_at))
+    if status.message:
+        if status.running:
+            st.success(status.message)
+        else:
+            st.info(status.message)
 
 
 def get_trading_loop_manager() -> TradingLoopManager:
@@ -786,6 +823,7 @@ def render_trade_tab(settings, tickers: list[str]) -> None:
 def main() -> None:
     settings = load_environment()
     configure_logging(settings.log_level)
+    st.session_state["scanner2_snapshot_service_status"] = start_scanner2_snapshot_worker(settings)
     tickers = load_tickers()
 
     render_header()

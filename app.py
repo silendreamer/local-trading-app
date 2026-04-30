@@ -83,6 +83,7 @@ SUBMITTED_ORDERS_KEY = "submitted_orders"
 TRADE_CYCLE_SUMMARY_KEY = "trade_cycle_summary"
 SCANNER2_SNAPSHOT_INTERVAL_MINUTES = 15
 SCANNER2_SNAPSHOT_POLL_SECONDS = 30
+SCANNER2_SNAPSHOT_RETENTION_DAYS = 3
 
 
 @st.cache_data(ttl=900)
@@ -486,6 +487,7 @@ def start_scanner2_snapshot_worker(settings) -> BackgroundSnapshotStatus:
         enabled=scanner2_auto_snapshot_enabled(settings),
         interval_minutes=SCANNER2_SNAPSHOT_INTERVAL_MINUTES,
         poll_seconds=SCANNER2_SNAPSHOT_POLL_SECONDS,
+        retention_days=SCANNER2_SNAPSHOT_RETENTION_DAYS,
     )
 
 
@@ -498,7 +500,8 @@ def render_scanner2_snapshot_service_status() -> None:
     status_cols[0].metric("Auto snapshots", "On" if status.enabled else "Off")
     status_cols[1].metric("Service", "Running" if status.running else "Stopped")
     status_cols[2].metric("Interval", f"{status.interval_minutes} min")
-    status_cols[3].metric("Started", format_market_time(status.started_at))
+    status_cols[3].metric("Retention", f"{SCANNER2_SNAPSHOT_RETENTION_DAYS} days")
+    st.caption(f"Started: {format_market_time(status.started_at)}")
     if status.message:
         if status.running:
             st.success(status.message)

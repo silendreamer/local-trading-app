@@ -34,6 +34,7 @@ def start_background_snapshot_service(
     enabled: bool,
     interval_minutes: int = 15,
     poll_seconds: int = 30,
+    retention_days: int = 3,
 ) -> BackgroundSnapshotStatus:
     """Start one daemon snapshot worker for the current Streamlit process."""
     global _MESSAGE, _STARTED_AT, _THREAD
@@ -58,6 +59,7 @@ def start_background_snapshot_service(
                 "config": config,
                 "interval_minutes": interval_minutes,
                 "poll_seconds": poll_seconds,
+                "retention_days": retention_days,
             },
             name="scanner2-snapshot-service",
             daemon=True,
@@ -76,13 +78,14 @@ def background_snapshot_status(
         return _status(enabled, interval_minutes, poll_seconds)
 
 
-def _run_service(config: Scanner2Config, interval_minutes: int, poll_seconds: int) -> None:
+def _run_service(config: Scanner2Config, interval_minutes: int, poll_seconds: int, retention_days: int) -> None:
     global _MESSAGE
     try:
         run_snapshot_service(
             config=config,
             interval_minutes=interval_minutes,
             poll_seconds=poll_seconds,
+            retention_days=retention_days,
         )
     except Exception:
         LOGGER.exception("Background Scanner2 snapshot service stopped unexpectedly")

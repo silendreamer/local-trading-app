@@ -15,12 +15,14 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="Persist Polygon snapshots every N minutes.")
     parser.add_argument("--interval-minutes", type=int, default=15)
     parser.add_argument("--poll-seconds", type=int, default=30)
+    parser.add_argument("--retention-days", type=int, default=3)
     parser.add_argument("--once", action="store_true")
     args = parser.parse_args()
     run_snapshot_service(
         config=load_config(),
         interval_minutes=args.interval_minutes,
         poll_seconds=args.poll_seconds,
+        retention_days=args.retention_days,
         run_once=args.once,
     )
 

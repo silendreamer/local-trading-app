@@ -12,6 +12,7 @@ from trading_app.scanner2.polygon_client import PolygonRestClient
 
 LOGGER = logging.getLogger(__name__)
 SNAPSHOT_DIR = PROJECT_ROOT / "data" / "snapshots"
+DEFAULT_RETENTION_DAYS = 3
 
 
 def snapshot_path(scan_time: datetime, snapshot_dir: Path | None = None) -> Path:
@@ -40,6 +41,39 @@ def snapshot_exists(scan_time: datetime, snapshot_dir: Path | None = None) -> bo
     return snapshot_path(scan_time, snapshot_dir).exists()
 
 
+def snapshot_time_from_path(path: Path) -> datetime | None:
+    """Parse a persisted snapshot filename timestamp."""
+    stamp = path.stem.removeprefix("snapshot_")
+    try:
+        return datetime.strptime(stamp, "%Y%m%d_%H%M").replace(tzinfo=MARKET_TIMEZONE)
+    except ValueError:
+        return None
+
+
+def delete_snapshots_older_than(
+    retention_days: int = DEFAULT_RETENTION_DAYS,
+    snapshot_dir: Path | None = None,
+    now: datetime | None = None,
+) -> int:
+    """Delete persisted snapshot files older than the retention window."""
+    target_dir = snapshot_dir or SNAPSHOT_DIR
+    if not target_dir.exists():
+        return 0
+
+    cutoff = (now or datetime.now(MARKET_TIMEZONE)).astimezone(MARKET_TIMEZONE) - timedelta(days=retention_days)
+    deleted = 0
+    for path in target_dir.glob("snapshot_*.json"):
+        snapshot_time = snapshot_time_from_path(path)
+        if snapshot_time is None or snapshot_time >= cutoff:
+            continue
+        try:
+            path.unlink()
+            deleted += 1
+        except OSError:
+            LOGGER.exception("Failed to delete old snapshot path=%s", path)
+    return deleted
+
+
 def capture_snapshot(
     client: PolygonRestClient,
     scan_time: datetime | None = None,
@@ -65,11 +99,18 @@ def due_scan_time(now: datetime, interval_minutes: int = 15) -> datetime:
     return current.replace(minute=minute, second=0, microsecond=0)
 
 
+def is_interval_boundary(now: datetime, interval_minutes: int = 15) -> bool:
+    """Return whether current market time is on an interval boundary minute."""
+    current = now.astimezone(MARKET_TIMEZONE)
+    return current.minute % interval_minutes == 0
+
+
 def run_snapshot_service(
     config: Scanner2Config | None = None,
     snapshot_dir: Path | None = None,
     interval_minutes: int = 15,
     poll_seconds: int = 30,
+    retention_days: int = DEFAULT_RETENTION_DAYS,
     run_once: bool = False,
 ) -> None:
     """Persist Polygon snapshots on a fixed interval throughout the trading day."""
@@ -81,7 +122,8 @@ def run_snapshot_service(
     while True:
         now = datetime.now(MARKET_TIMEZONE)
         target_time = due_scan_time(now, interval_minutes)
-        if is_capture_window(target_time):
+        delete_snapshots_older_than(retention_days, snapshot_dir=snapshot_dir, now=now)
+        if is_interval_boundary(now, interval_minutes) and is_capture_window(target_time):
             try:
                 capture_snapshot(client, target_time, snapshot_dir=snapshot_dir)
             except Exception:

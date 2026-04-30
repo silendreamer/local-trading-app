@@ -10,6 +10,7 @@ from trading_app.broker import (
     OrderRiskLimits,
     OrderSide,
     PaperBroker,
+    dedupe_orders_by_ticker,
     orders_for_target_weights,
     validate_orders_against_risk_limits,
 )
@@ -58,7 +59,30 @@ class FakeSession:
                         "qty": "2",
                         "market_value": "400.00",
                         "avg_entry_price": "190.00",
+                        "unrealized_pl": "20.00",
+                        "current_price": "200.00",
                     }
+                ]
+            )
+        if url.endswith("/v2/orders") and kwargs.get("params", {}).get("status") == "open":
+            return FakeResponse(
+                [
+                    {
+                        "id": "open-order-id",
+                        "symbol": "AAPL",
+                        "side": "buy",
+                        "qty": "1",
+                        "status": "new",
+                    }
+                ]
+            )
+        if url.endswith("/v2/assets"):
+            return FakeResponse(
+                [
+                    {"symbol": "AAPL", "status": "active", "tradable": True},
+                    {"symbol": "MSFT", "status": "active", "tradable": True},
+                    {"symbol": "HALTED", "status": "inactive", "tradable": True},
+                    {"symbol": "NOPE", "status": "active", "tradable": False},
                 ]
             )
         return FakeResponse({"id": "order-id", "status": "accepted"})
@@ -120,19 +144,35 @@ def test_alpaca_paper_broker_fetches_account_and_positions() -> None:
 
     account = broker.fetch_account()
     positions = broker.fetch_positions()
+    open_orders = broker.fetch_open_orders()
 
     assert broker.base_url == ALPACA_PAPER_BASE_URL
     assert account.cash == 1000.50
     assert account.status == "ACTIVE"
     assert positions[0].ticker == "AAPL"
     assert positions[0].quantity == 2
+    assert positions[0].average_entry_price == 190.0
+    assert positions[0].market_value == 400.0
+    assert positions[0].unrealized_pl == 20.0
+    assert positions[0].current_price == 200.0
+    assert open_orders[0].order_id == "open-order-id"
+    assert open_orders[0].ticker == "AAPL"
+    assert open_orders[0].side == OrderSide.BUY
+
+
+def test_alpaca_paper_broker_fetches_active_us_equities() -> None:
+    broker = AlpacaPaperBroker(api_key="key", secret_key="secret", session=FakeSession())
+
+    symbols = broker.fetch_active_us_equities()
+
+    assert symbols == ["AAPL", "MSFT"]
 
 
 def test_alpaca_paper_broker_dry_run_does_not_submit_order() -> None:
     session = FakeSession()
     broker = AlpacaPaperBroker(api_key="key", secret_key="secret", dry_run=True, session=session)
 
-    result = broker.submit_order(Order("AAPL", OrderSide.BUY, 1), approved=True)
+    result = broker.submit_order(Order("AAPL", OrderSide.BUY, 1, limit_price=200.12), approved=True)
 
     assert result["dry_run"] is True
     assert session.requests == []
@@ -149,13 +189,15 @@ def test_alpaca_paper_broker_submits_only_to_paper_endpoint() -> None:
     session = FakeSession()
     broker = AlpacaPaperBroker(api_key="key", secret_key="secret", dry_run=False, session=session)
 
-    result = broker.submit_order(Order("AAPL", OrderSide.BUY, 1), approved=True)
+    result = broker.submit_order(Order("AAPL", OrderSide.BUY, 1, limit_price=200.12), approved=True)
 
     assert result["status"] == "accepted"
     assert session.requests[0]["method"] == "POST"
     assert session.requests[0]["url"] == f"{ALPACA_PAPER_BASE_URL}/v2/orders"
     assert session.requests[0]["json"]["symbol"] == "AAPL"
     assert session.requests[0]["json"]["side"] == "buy"
+    assert session.requests[0]["json"]["type"] == "limit"
+    assert session.requests[0]["json"]["limit_price"] == "200.12"
 
 
 def test_orders_for_target_weights_enforces_position_count_and_weight_caps() -> None:
@@ -186,6 +228,21 @@ def test_orders_for_target_weights_enforces_position_count_and_weight_caps() -> 
 
     assert len(orders) == 5
     assert all(order.quantity == 10 for order in orders)
+
+
+def test_dedupe_orders_by_ticker_keeps_one_order_per_symbol() -> None:
+    orders = dedupe_orders_by_ticker(
+        [
+            Order("AAPL", OrderSide.BUY, 1),
+            Order("AAPL", OrderSide.SELL, 1),
+            Order("MSFT", OrderSide.BUY, 2),
+        ]
+    )
+
+    assert orders == [
+        Order("AAPL", OrderSide.BUY, 1),
+        Order("MSFT", OrderSide.BUY, 2),
+    ]
 
 
 def test_order_risk_limits_reject_caps_above_hard_limits() -> None:

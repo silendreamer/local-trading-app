@@ -29,6 +29,8 @@ class Order:
     ticker: str
     side: OrderSide
     quantity: int
+    limit_price: float | None = None
+    order_type: str = "limit"
 
 
 @dataclass(frozen=True)
@@ -58,6 +60,17 @@ class AlpacaPosition:
     quantity: int
     market_value: float
     average_entry_price: float
+    unrealized_pl: float = 0.0
+    current_price: float = 0.0
+
+
+@dataclass(frozen=True)
+class AlpacaOpenOrder:
+    order_id: str
+    ticker: str
+    side: OrderSide
+    quantity: int
+    status: str
 
 
 @dataclass(frozen=True)
@@ -170,9 +183,41 @@ class AlpacaPaperBroker:
                 quantity=int(float(position.get("qty", 0))),
                 market_value=float(position.get("market_value", 0.0)),
                 average_entry_price=float(position.get("avg_entry_price", 0.0)),
+                unrealized_pl=float(position.get("unrealized_pl", 0.0)),
+                current_price=float(position.get("current_price", 0.0)),
             )
             for position in payload
         ]
+
+    def fetch_open_orders(self) -> list[AlpacaOpenOrder]:
+        payload = self._request("GET", "/v2/orders", params={"status": "open"})
+        return [
+            AlpacaOpenOrder(
+                order_id=str(order.get("id", "")),
+                ticker=str(order.get("symbol", "")),
+                side=OrderSide(str(order.get("side", "")).lower()),
+                quantity=int(float(order.get("qty", 0))),
+                status=str(order.get("status", "")),
+            )
+            for order in payload
+        ]
+
+    def fetch_active_us_equities(self) -> list[str]:
+        payload = self._request(
+            "GET",
+            "/v2/assets",
+            params={"status": "active", "asset_class": "us_equity"},
+        )
+        symbols = []
+        for asset in payload:
+            symbol = str(asset.get("symbol", "")).strip().upper()
+            if (
+                symbol
+                and str(asset.get("status", "")).lower() == "active"
+                and bool(asset.get("tradable", False))
+            ):
+                symbols.append(symbol)
+        return sorted(set(symbols))
 
     def submit_order(self, order: Order, approved: bool = False) -> dict[str, Any]:
         if not approved:
@@ -184,6 +229,8 @@ class AlpacaPaperBroker:
                 "symbol": order.ticker,
                 "side": order.side.value,
                 "qty": order.quantity,
+                "type": order.order_type,
+                "limit_price": order.limit_price,
                 "status": "not_submitted",
             }
 
@@ -191,9 +238,13 @@ class AlpacaPaperBroker:
             "symbol": order.ticker,
             "qty": str(order.quantity),
             "side": order.side.value,
-            "type": "market",
+            "type": order.order_type,
             "time_in_force": "day",
         }
+        if order.order_type == "limit":
+            if order.limit_price is None:
+                raise ValueError("limit_price is required for limit orders")
+            payload["limit_price"] = f"{order.limit_price:.2f}"
         response = self._request("POST", "/v2/orders", json=payload)
         log_order_event("SUBMITTED", order)
         return response
@@ -237,6 +288,22 @@ def log_order_event(event: str, order: Order) -> None:
 def log_proposed_orders(orders: list[Order]) -> None:
     for order in orders:
         log_order_event("PROPOSED", order)
+
+
+def dedupe_orders_by_ticker(orders: list[Order]) -> list[Order]:
+    """Keep at most one order per ticker for one decision/submission cycle."""
+    deduped: list[Order] = []
+    seen: set[str] = set()
+    for order in orders:
+        if order.ticker in seen:
+            logging.getLogger(ORDER_LOGGER_NAME).warning(
+                "Skipping duplicate order for %s in same cycle",
+                order.ticker,
+            )
+            continue
+        deduped.append(order)
+        seen.add(order.ticker)
+    return deduped
 
 
 def orders_for_target_weights(

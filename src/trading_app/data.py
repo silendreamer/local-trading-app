@@ -39,7 +39,7 @@ class LatestQuote:
 
 
 def fetch_prices(request: MarketDataRequest) -> pd.DataFrame:
-    """Fetch adjusted close prices from Alpha Vantage."""
+    """Fetch close prices from Alpha Vantage."""
     frames = [
         fetch_ticker_prices_from_alpha_vantage(ticker, request)
         for ticker in validate_tickers(request.tickers)
@@ -130,7 +130,7 @@ def alpha_vantage_params(ticker: str, request: MarketDataRequest) -> dict[str, s
     if interval == "1d":
         params.update(
             {
-                "function": "TIME_SERIES_DAILY_ADJUSTED",
+                "function": "TIME_SERIES_DAILY",
                 "outputsize": "full",
             }
         )

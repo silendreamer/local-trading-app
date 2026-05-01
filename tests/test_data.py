@@ -82,6 +82,16 @@ def test_alpha_vantage_params_uses_intraday_endpoint(monkeypatch) -> None:
     assert params["apikey"] == "test-key"
 
 
+def test_alpha_vantage_params_uses_free_daily_endpoint(monkeypatch) -> None:
+    monkeypatch.setenv("ALPHA_VANTAGE_API_KEY", "test-key")
+
+    params = alpha_vantage_params("AAPL", MarketDataRequest(tickers=["AAPL"], start="2026-04-27"))
+
+    assert params["function"] == "TIME_SERIES_DAILY"
+    assert params["outputsize"] == "full"
+    assert params["apikey"] == "test-key"
+
+
 def test_parse_alpha_vantage_quote_returns_latest_price() -> None:
     payload = {
         "Global Quote": {

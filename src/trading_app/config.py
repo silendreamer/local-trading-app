@@ -20,10 +20,7 @@ class AppSettings:
     alpaca_paper: bool = True
     dry_run: bool = True
     auto_trade: bool = False
-    alpha_vantage_api_key: str = ""
-    finnhub_api_key: str = ""
     polygon_api_key: str = ""
-    fmp_api_key: str = ""
 
 
 def load_environment(env_path: Path | None = None) -> AppSettings:
@@ -40,10 +37,7 @@ def load_environment(env_path: Path | None = None) -> AppSettings:
         alpaca_paper=os.getenv("ALPACA_PAPER", "true").strip().lower() not in {"false", "0", "no"},
         dry_run=os.getenv("DRY_RUN", "true").strip().lower() not in {"false", "0", "no"},
         auto_trade=os.getenv("AUTO_TRADE", "false").strip().lower() in {"true", "1", "yes"},
-        alpha_vantage_api_key=os.getenv("ALPHA_VANTAGE_API_KEY", ""),
-        finnhub_api_key=os.getenv("FINNHUB_API_KEY", ""),
         polygon_api_key=os.getenv("POLYGON_API_KEY", ""),
-        fmp_api_key=os.getenv("FMP_API_KEY", ""),
     )
 
 

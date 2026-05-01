@@ -124,6 +124,6 @@ def test_polygon_client_translates_snapshot_forbidden() -> None:
         client.full_market_snapshot()
     except PermissionError as exc:
         assert "does not include access" in str(exc)
-        assert "switch the scanner provider to Finnhub" in str(exc)
+        assert "full-market snapshot" in str(exc)
     else:
         raise AssertionError("Expected PermissionError")

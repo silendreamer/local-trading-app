@@ -74,6 +74,20 @@ def delete_snapshots_older_than(
     return deleted
 
 
+def recent_snapshots(limit: int = 5, snapshot_dir: Path | None = None) -> list[tuple[datetime, Path]]:
+    """Return the most recent persisted snapshots by encoded capture time."""
+    target_dir = snapshot_dir or SNAPSHOT_DIR
+    if not target_dir.exists():
+        return []
+
+    snapshots = []
+    for path in target_dir.glob("snapshot_*.json"):
+        snapshot_time = snapshot_time_from_path(path)
+        if snapshot_time is not None:
+            snapshots.append((snapshot_time, path))
+    return sorted(snapshots, key=lambda item: item[0], reverse=True)[:limit]
+
+
 def capture_snapshot(
     client: PolygonRestClient,
     scan_time: datetime | None = None,

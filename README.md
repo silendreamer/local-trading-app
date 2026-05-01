@@ -44,6 +44,11 @@ Add Alpaca paper-trading credentials to `.env` when you are ready to connect a p
 DRY_RUN=true
 AUTO_TRADE=false
 POLYGON_API_KEY=your-polygon-key
+SNAPSHOT_STORAGE=github
+GITHUB_SNAPSHOT_REPO=your-github-user-or-org/local-trading-app
+GITHUB_SNAPSHOT_BRANCH=snapshot-data
+GITHUB_SNAPSHOT_DIR=snapshots
+GITHUB_SNAPSHOT_TOKEN=your-fine-grained-github-token
 ALPACA_PAPER=true
 ALPACA_API_KEY=your-paper-key
 ALPACA_SECRET_KEY=your-paper-secret
@@ -119,6 +124,8 @@ data/snapshots/snapshot_YYYYMMDD_HHMM.json
 ```
 
 The `SCANNER2` tab analyzes those saved snapshots. It does not call the snapshot endpoint per ticker and does not place trades.
+
+On Streamlit Community Cloud, local files can disappear when the app reboots, redeploys, or hibernates. To persist snapshots, set the GitHub snapshot secrets above. The app writes snapshot JSON files to the configured `GITHUB_SNAPSHOT_BRANCH`, which should be different from your deployed app branch so snapshot commits do not redeploy the app.
 
 ## Run The Dashboard
 

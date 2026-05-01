@@ -60,13 +60,7 @@ from trading_app.scanner2.output_builder import output_columns as scanner2_outpu
 from trading_app.scanner2.polygon_client import PolygonRestClient as Scanner2PolygonRestClient
 from trading_app.scanner2.scanner import run_full_scan as run_scanner2_full_scan
 from trading_app.scanner2.github_snapshot_store import load_github_snapshot_config
-from trading_app.scanner2.snapshot_store import (
-    capture_snapshot,
-    latest_snapshot_time,
-    next_interval_boundary,
-    recent_snapshots,
-    snapshot_path,
-)
+from trading_app.scanner2 import snapshot_store
 from trading_app.strategies.momentum_strategy import MomentumTradingConfig, momentum_trading_signals
 from trading_app.strategies.strategy import MovingAverageConfig, moving_average_signals, target_equal_weights
 from trading_app.strategies.swing_strategy import SwingStrategyConfig
@@ -370,7 +364,7 @@ def render_scanner2_tab(settings) -> None:
                     config.polygon_api_key,
                     request_sleep_seconds=config.request_sleep_seconds,
                 )
-                path = capture_snapshot(client, scan_time=market_now(), overwrite=True)
+                path = snapshot_store.capture_snapshot(client, scan_time=market_now(), overwrite=True)
                 st.success(f"Saved snapshot: {path}")
             except Exception as exc:
                 st.warning(str(exc))
@@ -406,11 +400,11 @@ def render_scanner2_tab(settings) -> None:
     last_run = st.session_state.get("scanner2_last_run")
     if last_run:
         st.caption(f"Last Scanner2 run: {last_run}")
-    st.caption(f"Current snapshot path: {snapshot_path(market_now())}")
+    st.caption(f"Current snapshot path: {snapshot_store.snapshot_path(market_now())}")
 
 
 def render_recent_scanner2_snapshots() -> None:
-    snapshots = recent_snapshots(5)
+    snapshots = snapshot_store.recent_snapshots(5)
     st.subheader("Recent Snapshots")
     github_config = load_github_snapshot_config()
     if github_config:
@@ -460,8 +454,8 @@ def render_scanner2_snapshot_service_status() -> None:
         return
 
     status_cols = st.columns(6)
-    last_snapshot = latest_snapshot_time()
-    next_snapshot = next_interval_boundary(market_now(), status.interval_minutes)
+    last_snapshot = snapshot_store.latest_snapshot_time()
+    next_snapshot = snapshot_store.next_interval_boundary(market_now(), status.interval_minutes)
     status_cols[0].metric("Auto snapshots", "On" if status.enabled else "Off")
     status_cols[1].metric("Service", "Running" if status.running else "Stopped")
     status_cols[2].metric("Interval", f"{status.interval_minutes} min")

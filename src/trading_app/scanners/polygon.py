@@ -40,8 +40,7 @@ class PolygonClient:
             raise PermissionError(
                 "Polygon rejected the full-market snapshot request with 403 Forbidden. "
                 "Your API key likely does not include access to "
-                "/v2/snapshot/locale/us/markets/stocks/tickers. "
-                "Use a Polygon plan with stock snapshot access, or switch the scanner provider to Finnhub."
+                "/v2/snapshot/locale/us/markets/stocks/tickers."
             )
         response.raise_for_status()
         payload = response.json()

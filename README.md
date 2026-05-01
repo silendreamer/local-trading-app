@@ -1,6 +1,6 @@
 # Local Paper-Trading Research App
 
-A local Python 3.11 research dashboard for paper-trading experiments. It uses Streamlit for the dashboard and Alpha Vantage for market data.
+A local Python 3.11 research dashboard for paper-trading experiments. It uses Streamlit for the dashboard and Polygon for market data.
 
 This project intentionally does not include live trading. Broker code is paper-trading only and uses Alpaca's paper endpoint when credentials are configured.
 
@@ -9,7 +9,7 @@ This software is for research and education only. It is not financial advice, in
 ## Features
 
 - Loads 20 research tickers from `config/tickers.yaml`
-- Fetches daily and intraday OHLC data from Alpha Vantage
+- Fetches daily and intraday OHLC data from Polygon
 - Runs a long-only moving-average crossover strategy
 - Includes a conservative daily swing-trading strategy module
 - Backtests the swing strategy across the configured ticker set with slippage and transaction costs
@@ -43,10 +43,7 @@ Add Alpaca paper-trading credentials to `.env` when you are ready to connect a p
 ```dotenv
 DRY_RUN=true
 AUTO_TRADE=false
-ALPHA_VANTAGE_API_KEY=your-alpha-vantage-key
-FINNHUB_API_KEY=your-finnhub-key
 POLYGON_API_KEY=your-polygon-key
-FMP_API_KEY=your-fmp-key
 ALPACA_PAPER=true
 ALPACA_API_KEY=your-paper-key
 ALPACA_SECRET_KEY=your-paper-secret
@@ -95,11 +92,7 @@ This tool is intentionally paper-first. Keep `DRY_RUN=true` while developing or 
 
 ## Momentum Scanner
 
-Use the `SCANNER` tab to find momentum candidates. The default provider is Financial Modeling Prep Gainers, which uses FMP's biggest-gainers endpoint and filters locally by gap, volume, and price.
-
-Set `FMP_API_KEY` in `.env` before using the FMP scanner.
-
-The tab also supports Polygon Snapshot, which uses Polygon's full-market stock snapshot endpoint to retrieve current market data for all US stock tickers in one request, then filters locally by gap, volume, and price.
+Use the `SCANNER` tab to find momentum candidates. The scanner uses Polygon's full-market stock snapshot endpoint to retrieve current market data for all US stock tickers in one request, then filters locally by gap, volume, and price.
 
 Polygon Snapshot scan:
 
@@ -109,15 +102,6 @@ Polygon Snapshot scan:
 4. Return the configured top N movers.
 
 Set `POLYGON_API_KEY` in `.env` before using the Polygon scanner. Polygon snapshot recency depends on your Polygon plan.
-
-The tab also keeps a Finnhub mode. The Finnhub scanner uses two stages to reduce expensive candle calls:
-
-1. Cache the Finnhub US symbol list locally once per day under `data/finnhub-cache/`.
-2. Call Finnhub `/quote` for the symbol universe and keep only names above the configured gap threshold.
-3. Call Finnhub `/stock/candle` only for the gap-filtered symbols.
-4. Apply price and premarket-volume filters, then rank by gap percentage and relative volume.
-
-Set `FINNHUB_API_KEY` in `.env` before using the scanner. The quote pass still requires one quote request per symbol, so configure the scanner's request-per-minute setting to match your Finnhub plan.
 
 ### Scanner2 Snapshot Service
 
@@ -142,7 +126,7 @@ The `SCANNER2` tab analyzes those saved snapshots. It does not call the snapshot
 streamlit run app.py
 ```
 
-The app runs locally in your browser. Market data comes from Alpha Vantage, so `ALPHA_VANTAGE_API_KEY` and an internet connection are required when fetching prices. Free Alpha Vantage keys are rate limited; if a scan covers many tickers, the app may show the provider's rate-limit message and skip affected symbols.
+The app runs locally in your browser. Market data comes from Polygon, so `POLYGON_API_KEY` and an internet connection are required when fetching prices or snapshots.
 
 ## Run Tests
 
@@ -155,7 +139,7 @@ pytest
 ```text
 config/tickers.yaml          20 research tickers
 app.py                       Streamlit dashboard
-src/trading_app/data.py      Alpha Vantage data fetching and normalization
+src/trading_app/data.py      Polygon data fetching and normalization
 src/trading_app/strategies/strategy.py
 src/trading_app/strategies/swing_strategy.py
 src/trading_app/backtesting.py

@@ -1,11 +1,12 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import datetime, time
+from datetime import date, datetime, time, timedelta
 from zoneinfo import ZoneInfo
 
 import pandas as pd
-import yfinance as yf
+
+from trading_app.data import MarketDataRequest, fetch_ohlc
 
 
 MARKET_TIMEZONE = ZoneInfo("America/New_York")
@@ -207,53 +208,15 @@ def continuation_signal(
 
 
 def fetch_daily_history_batch(tickers: list[str]) -> dict[str, pd.DataFrame]:
-    return fetch_yfinance_batch(tickers, period="15d", interval="1d", prepost=False)
+    end = date.today() + timedelta(days=1)
+    start = end - timedelta(days=15)
+    return fetch_ohlc(MarketDataRequest(tickers=normalize_tickers(tickers), start=start, end=end, interval="1d"))
 
 
 def fetch_intraday_history_batch(tickers: list[str]) -> dict[str, pd.DataFrame]:
-    return fetch_yfinance_batch(tickers, period="1d", interval="1m", prepost=True)
-
-
-def fetch_yfinance_batch(tickers: list[str], period: str, interval: str, prepost: bool) -> dict[str, pd.DataFrame]:
-    result: dict[str, pd.DataFrame] = {}
-    for chunk in chunked(normalize_tickers(tickers), 100):
-        yfinance_symbols = [to_yfinance_symbol(ticker) for ticker in chunk]
-        raw = yf.download(
-            tickers=yfinance_symbols,
-            period=period,
-            interval=interval,
-            prepost=prepost,
-            auto_adjust=False,
-            progress=False,
-            group_by="ticker",
-            threads=True,
-        )
-        for ticker, yfinance_symbol in zip(chunk, yfinance_symbols):
-            result[ticker] = extract_ticker_frame(raw, yfinance_symbol, len(chunk) == 1)
-    return result
-
-
-def extract_ticker_frame(raw: pd.DataFrame, yfinance_symbol: str, single_ticker: bool) -> pd.DataFrame:
-    if raw.empty:
-        return pd.DataFrame()
-    if single_ticker and not isinstance(raw.columns, pd.MultiIndex):
-        return raw.copy()
-    if not isinstance(raw.columns, pd.MultiIndex):
-        return pd.DataFrame()
-    if yfinance_symbol in raw.columns.get_level_values(0):
-        return raw[yfinance_symbol].copy()
-    if yfinance_symbol in raw.columns.get_level_values(1):
-        return raw.xs(yfinance_symbol, axis=1, level=1).copy()
-    return pd.DataFrame()
-
-
-def chunked(values: list[str], size: int):
-    for index in range(0, len(values), size):
-        yield values[index : index + size]
-
-
-def to_yfinance_symbol(ticker: str) -> str:
-    return ticker.replace(".", "-")
+    end = datetime.now(MARKET_TIMEZONE) + timedelta(days=1)
+    start = end - timedelta(days=1)
+    return fetch_ohlc(MarketDataRequest(tickers=normalize_tickers(tickers), start=start.date(), end=end.date(), interval="1m"))
 
 
 def normalize_market_time(now: datetime | None = None) -> datetime:
@@ -335,11 +298,11 @@ def scan_ticker(ticker: str, now: datetime, daily_fetcher, intraday_fetcher) -> 
 
 
 def fetch_daily_history(ticker: str) -> pd.DataFrame:
-    return yf.Ticker(ticker).history(period="15d", interval="1d", auto_adjust=False)
+    return fetch_daily_history_batch([ticker]).get(normalize_tickers([ticker])[0], pd.DataFrame())
 
 
 def fetch_intraday_history(ticker: str) -> pd.DataFrame:
-    return yf.Ticker(ticker).history(period="1d", interval="1m", prepost=True, auto_adjust=False)
+    return fetch_intraday_history_batch([ticker]).get(normalize_tickers([ticker])[0], pd.DataFrame())
 
 
 def previous_trading_day_row(daily: pd.DataFrame, now: datetime) -> pd.Series:

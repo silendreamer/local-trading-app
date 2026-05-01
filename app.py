@@ -39,8 +39,6 @@ from trading_app.intraday_loop import (
 )
 from trading_app.logging_config import configure_logging
 from trading_app.order_execution import OrderExecutionConfig, build_execution_order, execute_orders
-from trading_app.scanners.finnhub import FinnhubScannerConfig, scan_finnhub_momentum, scanner_columns
-from trading_app.scanners.fmp import FmpGainersScannerConfig, fmp_scanner_columns, scan_fmp_gainers
 from trading_app.scanners.polygon import (
     PolygonSnapshotScannerConfig,
     polygon_scanner_columns,
@@ -267,11 +265,8 @@ def render_place_order_tab(settings) -> None:
 
 def render_scanner_tab(settings) -> None:
     st.subheader("Scanner")
-    provider = st.selectbox(
-        "Data provider",
-        ["Financial Modeling Prep Gainers", "Polygon Snapshot", "Finnhub Quotes + Candles"],
-    )
-    control_cols = st.columns(6)
+    st.caption("Uses Polygon's full-market stock snapshot, then filters by gap, volume, and price.")
+    control_cols = st.columns(5)
     gap_threshold = control_cols[0].number_input("Min gap %", min_value=0.0, value=5.0, step=0.5)
     min_premarket_volume = control_cols[1].number_input(
         "Min volume",
@@ -282,107 +277,41 @@ def render_scanner_tab(settings) -> None:
     min_price = control_cols[2].number_input("Min price", min_value=0.01, value=2.0, step=0.5)
     max_price = control_cols[3].number_input("Max price", min_value=0.01, value=20.0, step=0.5)
     top_n = control_cols[4].number_input("Top N", min_value=1, max_value=100, value=50, step=1)
-    requests_per_minute = control_cols[5].number_input(
-        "Finnhub RPM",
-        min_value=1,
-        max_value=600,
-        value=60,
-        step=10,
-    )
-    batch_cols = st.columns(2)
-    quote_batch_size = batch_cols[0].number_input("Quote batch size", min_value=1, max_value=500, value=100, step=25)
-    candle_batch_size = batch_cols[1].number_input("Candle batch size", min_value=1, max_value=100, value=25, step=5)
-    if provider == "Financial Modeling Prep Gainers":
-        st.caption(
-            "Uses FMP's biggest-gainers endpoint, then filters locally by gap, volume, and price."
-        )
-    elif provider == "Polygon Snapshot":
-        st.caption(
-            "Uses Polygon's full-market stock snapshot in one request, then filters by gap, volume, and price."
-        )
-    else:
-        st.caption(
-            "Uses cached Finnhub US symbols once per day, then calls /quote for the universe. "
-            "Candle calls are made only for symbols that pass the gap filter."
-        )
 
     results = st.session_state.get(
         "scanner_table_results",
-        pd.DataFrame(columns=scanner_result_columns(provider)),
+        pd.DataFrame(columns=polygon_scanner_columns()),
     )
     st.dataframe(results, use_container_width=True)
 
     if st.button("SCAN", type="primary", use_container_width=True):
         try:
-            if provider == "Financial Modeling Prep Gainers":
-                if not settings.fmp_api_key:
-                    st.warning("Add FMP_API_KEY to .env before running the FMP scanner.")
-                    return
-                with st.spinner("Fetching FMP biggest gainers and filtering top movers..."):
-                    st.session_state["scanner_table_results"] = scan_fmp_gainers(
-                        settings.fmp_api_key,
-                        config=FmpGainersScannerConfig(
-                            min_gap_pct=float(gap_threshold),
-                            min_volume=int(min_premarket_volume),
-                            min_price=float(min_price),
-                            max_price=float(max_price),
-                            top_n=int(top_n),
-                        ),
-                    )
-            elif provider == "Polygon Snapshot":
-                if not settings.polygon_api_key:
-                    st.warning("Add POLYGON_API_KEY to .env before running the Polygon snapshot scanner.")
-                    return
-                with st.spinner("Fetching Polygon full-market snapshot and filtering top movers..."):
-                    st.session_state["scanner_table_results"] = scan_polygon_snapshot(
-                        settings.polygon_api_key,
-                        config=PolygonSnapshotScannerConfig(
-                            min_gap_pct=float(gap_threshold),
-                            min_volume=int(min_premarket_volume),
-                            min_price=float(min_price),
-                            max_price=float(max_price),
-                            top_n=int(top_n),
-                        ),
-                    )
-            else:
-                if not settings.finnhub_api_key:
-                    st.warning("Add FINNHUB_API_KEY to .env before running the scanner.")
-                    return
-                with st.spinner("Scanning Finnhub quotes, then enriching gap candidates with candles..."):
-                    st.session_state["scanner_table_results"] = scan_finnhub_momentum(
-                        settings.finnhub_api_key,
-                        config=FinnhubScannerConfig(
-                            min_gap_pct=float(gap_threshold),
-                            min_premarket_volume=int(min_premarket_volume),
-                            min_price=float(min_price),
-                            max_price=float(max_price),
-                            top_n=int(top_n),
-                            quote_batch_size=int(quote_batch_size),
-                            candle_batch_size=int(candle_batch_size),
-                            requests_per_minute=int(requests_per_minute),
-                        ),
-                    )
+            if not settings.polygon_api_key:
+                st.warning("Add POLYGON_API_KEY to .env before running the Polygon snapshot scanner.")
+                return
+            with st.spinner("Fetching Polygon full-market snapshot and filtering top movers..."):
+                st.session_state["scanner_table_results"] = scan_polygon_snapshot(
+                    settings.polygon_api_key,
+                    config=PolygonSnapshotScannerConfig(
+                        min_gap_pct=float(gap_threshold),
+                        min_volume=int(min_premarket_volume),
+                        min_price=float(min_price),
+                        max_price=float(max_price),
+                        top_n=int(top_n),
+                    ),
+                )
             st.session_state["scanner_last_run"] = format_market_time(market_now())
             st.rerun()
         except Exception as exc:
             st.session_state["scanner_table_results"] = pd.DataFrame(
                 [{"ticker": "", "error": str(exc)}],
-                columns=scanner_result_columns(provider),
+                columns=polygon_scanner_columns(),
             )
             st.warning(str(exc))
 
     last_run = st.session_state.get("scanner_last_run")
     if last_run:
         st.caption(f"Last scan: {last_run}")
-
-
-def scanner_result_columns(provider: str) -> list[str]:
-    if provider == "Financial Modeling Prep Gainers":
-        return fmp_scanner_columns()
-    if provider == "Polygon Snapshot":
-        return polygon_scanner_columns()
-    return scanner_columns()
-
 
 def render_scanner2_tab(settings) -> None:
     st.subheader("Scanner2")

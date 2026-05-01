@@ -59,7 +59,7 @@ from trading_app.scanner2.config import load_config as load_scanner2_config
 from trading_app.scanner2.output_builder import output_columns as scanner2_output_columns
 from trading_app.scanner2.polygon_client import PolygonRestClient as Scanner2PolygonRestClient
 from trading_app.scanner2.scanner import run_full_scan as run_scanner2_full_scan
-from trading_app.scanner2.snapshot_store import capture_snapshot, snapshot_path
+from trading_app.scanner2.snapshot_store import capture_snapshot, recent_snapshots, snapshot_path
 from trading_app.strategies.momentum_strategy import MomentumTradingConfig, momentum_trading_signals
 from trading_app.strategies.strategy import MovingAverageConfig, moving_average_signals, target_equal_weights
 from trading_app.strategies.swing_strategy import SwingStrategyConfig
@@ -317,6 +317,7 @@ def render_scanner2_tab(settings) -> None:
     st.subheader("Scanner2")
     st.caption("Polygon.io premarket momentum watchlist generator only. This tab does not place trades.")
     render_scanner2_snapshot_service_status()
+    render_recent_scanner2_snapshots()
     control_cols = st.columns(7)
     min_price = control_cols[0].number_input("Min price", min_value=0.01, value=2.0, step=0.5, key="scanner2_min_price")
     max_price = control_cols[1].number_input("Max price", min_value=0.01, value=50.0, step=1.0, key="scanner2_max_price")
@@ -399,6 +400,27 @@ def render_scanner2_tab(settings) -> None:
     if last_run:
         st.caption(f"Last Scanner2 run: {last_run}")
     st.caption(f"Current snapshot path: {snapshot_path(market_now())}")
+
+
+def render_recent_scanner2_snapshots() -> None:
+    snapshots = recent_snapshots(5)
+    st.subheader("Recent Snapshots")
+    if not snapshots:
+        st.info("No snapshots have been captured yet.")
+        return
+    st.dataframe(
+        pd.DataFrame(
+            [
+                {
+                    "captured_at": format_market_time(snapshot_time),
+                    "file": path.name,
+                }
+                for snapshot_time, path in snapshots
+            ]
+        ),
+        use_container_width=True,
+        hide_index=True,
+    )
 
 
 def scanner2_auto_snapshot_enabled(settings) -> bool:

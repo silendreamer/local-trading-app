@@ -9,6 +9,7 @@ from trading_app.scanner2.snapshot_store import (
     is_interval_boundary,
     load_snapshot,
     nearest_snapshot_time,
+    recent_snapshots,
     save_snapshot,
     snapshot_exists,
     snapshot_path,
@@ -52,6 +53,28 @@ def test_delete_snapshots_older_than_retention_window(tmp_path) -> None:
     assert deleted == 1
     assert old_path.exists() is False
     assert recent_path.exists() is True
+
+
+def test_recent_snapshots_returns_latest_five_by_capture_time(tmp_path) -> None:
+    times = [
+        datetime(2026, 4, 30, 8, minute, tzinfo=MARKET_TIMEZONE)
+        for minute in [0, 15, 30, 45]
+    ] + [
+        datetime(2026, 4, 30, 9, minute, tzinfo=MARKET_TIMEZONE)
+        for minute in [0, 15]
+    ]
+    for scan_time in times:
+        save_snapshot({"tickers": []}, scan_time, tmp_path)
+
+    recent = recent_snapshots(5, tmp_path)
+
+    assert [scan_time.strftime("%H:%M") for scan_time, _ in recent] == [
+        "09:15",
+        "09:00",
+        "08:45",
+        "08:30",
+        "08:15",
+    ]
 
 
 def test_nearest_snapshot_time_uses_latest_before_scan(tmp_path) -> None:

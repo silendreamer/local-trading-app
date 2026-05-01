@@ -60,7 +60,13 @@ from trading_app.scanner2.output_builder import output_columns as scanner2_outpu
 from trading_app.scanner2.polygon_client import PolygonRestClient as Scanner2PolygonRestClient
 from trading_app.scanner2.scanner import run_full_scan as run_scanner2_full_scan
 from trading_app.scanner2.github_snapshot_store import load_github_snapshot_config
-from trading_app.scanner2.snapshot_store import capture_snapshot, recent_snapshots, snapshot_path
+from trading_app.scanner2.snapshot_store import (
+    capture_snapshot,
+    latest_snapshot_time,
+    next_interval_boundary,
+    recent_snapshots,
+    snapshot_path,
+)
 from trading_app.strategies.momentum_strategy import MomentumTradingConfig, momentum_trading_signals
 from trading_app.strategies.strategy import MovingAverageConfig, moving_average_signals, target_equal_weights
 from trading_app.strategies.swing_strategy import SwingStrategyConfig
@@ -453,11 +459,15 @@ def render_scanner2_snapshot_service_status() -> None:
     if not isinstance(status, BackgroundSnapshotStatus):
         return
 
-    status_cols = st.columns(4)
+    status_cols = st.columns(6)
+    last_snapshot = latest_snapshot_time()
+    next_snapshot = next_interval_boundary(market_now(), status.interval_minutes)
     status_cols[0].metric("Auto snapshots", "On" if status.enabled else "Off")
     status_cols[1].metric("Service", "Running" if status.running else "Stopped")
     status_cols[2].metric("Interval", f"{status.interval_minutes} min")
     status_cols[3].metric("Retention", f"{SCANNER2_SNAPSHOT_RETENTION_DAYS} days")
+    status_cols[4].metric("Last snapshot at", format_market_time(last_snapshot))
+    status_cols[5].metric("Next snapshot at", format_market_time(next_snapshot))
     st.caption(f"Started: {format_market_time(status.started_at)}")
     if status.message:
         if status.running:

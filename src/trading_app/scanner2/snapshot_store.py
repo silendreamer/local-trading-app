@@ -127,6 +127,13 @@ def recent_snapshots(limit: int = 5, snapshot_dir: Path | None = None) -> list[t
     return sorted(snapshots, key=lambda item: item[0], reverse=True)[:limit]
 
 
+def latest_snapshot_time(snapshot_dir: Path | None = None) -> datetime | None:
+    recent = recent_snapshots(1, snapshot_dir)
+    if not recent:
+        return None
+    return recent[0][0]
+
+
 def capture_snapshot(
     client: PolygonRestClient,
     scan_time: datetime | None = None,
@@ -156,6 +163,15 @@ def is_interval_boundary(now: datetime, interval_minutes: int = 15) -> bool:
     """Return whether current market time is on an interval boundary minute."""
     current = now.astimezone(MARKET_TIMEZONE)
     return current.minute % interval_minutes == 0
+
+
+def next_interval_boundary(now: datetime, interval_minutes: int = 15) -> datetime:
+    """Return the next interval boundary after the current market time."""
+    current = now.astimezone(MARKET_TIMEZONE).replace(second=0, microsecond=0)
+    minutes_to_add = interval_minutes - (current.minute % interval_minutes)
+    if minutes_to_add == 0:
+        minutes_to_add = interval_minutes
+    return current + timedelta(minutes=minutes_to_add)
 
 
 def run_snapshot_service(

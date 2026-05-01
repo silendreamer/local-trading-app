@@ -7,8 +7,10 @@ from trading_app.scanner2.snapshot_store import (
     delete_snapshots_older_than,
     due_scan_time,
     is_interval_boundary,
+    latest_snapshot_time,
     load_snapshot,
     nearest_snapshot_time,
+    next_interval_boundary,
     recent_snapshots,
     save_snapshot,
     snapshot_exists,
@@ -39,6 +41,14 @@ def test_interval_boundary_matches_quarter_hour_clock_times() -> None:
 
     assert is_interval_boundary(boundary) is True
     assert is_interval_boundary(between_boundaries) is False
+
+
+def test_next_interval_boundary_returns_next_quarter_hour() -> None:
+    between_boundaries = datetime(2026, 4, 30, 13, 7, 30, tzinfo=MARKET_TIMEZONE)
+    on_boundary = datetime(2026, 4, 30, 13, 15, 0, tzinfo=MARKET_TIMEZONE)
+
+    assert next_interval_boundary(between_boundaries).strftime("%H:%M") == "13:15"
+    assert next_interval_boundary(on_boundary).strftime("%H:%M") == "13:30"
 
 
 def test_delete_snapshots_older_than_retention_window(tmp_path) -> None:
@@ -75,6 +85,7 @@ def test_recent_snapshots_returns_latest_five_by_capture_time(tmp_path) -> None:
         "08:30",
         "08:15",
     ]
+    assert latest_snapshot_time(tmp_path).strftime("%H:%M") == "09:15"
 
 
 def test_snapshot_helpers_use_github_store_when_configured(monkeypatch, tmp_path) -> None:

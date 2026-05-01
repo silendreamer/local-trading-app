@@ -59,6 +59,7 @@ from trading_app.scanner2.config import load_config as load_scanner2_config
 from trading_app.scanner2.output_builder import output_columns as scanner2_output_columns
 from trading_app.scanner2.polygon_client import PolygonRestClient as Scanner2PolygonRestClient
 from trading_app.scanner2.scanner import run_full_scan as run_scanner2_full_scan
+from trading_app.scanner2.github_snapshot_store import load_github_snapshot_config
 from trading_app.scanner2.snapshot_store import capture_snapshot, recent_snapshots, snapshot_path
 from trading_app.strategies.momentum_strategy import MomentumTradingConfig, momentum_trading_signals
 from trading_app.strategies.strategy import MovingAverageConfig, moving_average_signals, target_equal_weights
@@ -405,6 +406,11 @@ def render_scanner2_tab(settings) -> None:
 def render_recent_scanner2_snapshots() -> None:
     snapshots = recent_snapshots(5)
     st.subheader("Recent Snapshots")
+    github_config = load_github_snapshot_config()
+    if github_config:
+        st.caption(f"Snapshot storage: GitHub `{github_config.repo}` branch `{github_config.branch}`")
+    else:
+        st.caption("Snapshot storage: local app filesystem")
     if not snapshots:
         st.info("No snapshots have been captured yet.")
         return

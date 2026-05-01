@@ -77,6 +77,34 @@ def test_recent_snapshots_returns_latest_five_by_capture_time(tmp_path) -> None:
     ]
 
 
+def test_snapshot_helpers_use_github_store_when_configured(monkeypatch, tmp_path) -> None:
+    saved = {}
+
+    class FakeGitHubStore:
+        def save_text(self, relative_path, content, message):
+            saved[relative_path] = content
+
+        def read_text(self, relative_path):
+            return saved[relative_path]
+
+        def exists(self, relative_path):
+            return relative_path in saved
+
+        def list_snapshot_names(self):
+            return list(saved)
+
+    monkeypatch.setattr("trading_app.scanner2.snapshot_store.github_snapshot_store", lambda: FakeGitHubStore())
+    scan_time = datetime(2026, 4, 30, 9, 15, tzinfo=MARKET_TIMEZONE)
+
+    path = save_snapshot({"tickers": [{"ticker": "AAA"}]}, scan_time)
+
+    assert path == snapshot_path(scan_time)
+    assert snapshot_exists(scan_time) is True
+    assert load_snapshot(scan_time) == {"tickers": [{"ticker": "AAA"}]}
+    assert recent_snapshots(1)[0][0] == scan_time
+    assert not (tmp_path / path.name).exists()
+
+
 def test_nearest_snapshot_time_uses_latest_before_scan(tmp_path) -> None:
     early = datetime(2026, 4, 30, 8, 15, tzinfo=MARKET_TIMEZONE)
     later = datetime(2026, 4, 30, 8, 30, tzinfo=MARKET_TIMEZONE)

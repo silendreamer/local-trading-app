@@ -7,6 +7,7 @@ from pathlib import Path
 
 from trading_app.config import PROJECT_ROOT
 from trading_app.scanner2.config import MARKET_TIMEZONE, Scanner2Config, load_config
+from trading_app.scanner2.github_snapshot_store import GitHubSnapshotStore, load_github_snapshot_config
 from trading_app.scanner2.polygon_client import PolygonRestClient
 
 
@@ -24,6 +25,14 @@ def snapshot_path(scan_time: datetime, snapshot_dir: Path | None = None) -> Path
 def save_snapshot(payload: dict, scan_time: datetime, snapshot_dir: Path | None = None) -> Path:
     """Save a Polygon full-market snapshot response to disk."""
     path = snapshot_path(scan_time, snapshot_dir)
+    github_store = github_snapshot_store()
+    if snapshot_dir is None and github_store:
+        github_store.save_text(
+            path.name,
+            json.dumps(payload),
+            f"Save Polygon snapshot {path.name}",
+        )
+        return path
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(payload), encoding="utf-8")
     return path
@@ -32,13 +41,20 @@ def save_snapshot(payload: dict, scan_time: datetime, snapshot_dir: Path | None 
 def load_snapshot(scan_time: datetime, snapshot_dir: Path | None = None) -> dict:
     """Load a persisted Polygon snapshot response for a scan time."""
     path = snapshot_path(scan_time, snapshot_dir)
+    github_store = github_snapshot_store()
+    if snapshot_dir is None and github_store:
+        return json.loads(github_store.read_text(path.name))
     if not path.exists():
         raise FileNotFoundError(f"Snapshot not found: {path}")
     return json.loads(path.read_text(encoding="utf-8"))
 
 
 def snapshot_exists(scan_time: datetime, snapshot_dir: Path | None = None) -> bool:
-    return snapshot_path(scan_time, snapshot_dir).exists()
+    path = snapshot_path(scan_time, snapshot_dir)
+    github_store = github_snapshot_store()
+    if snapshot_dir is None and github_store:
+        return github_store.exists(path.name)
+    return path.exists()
 
 
 def snapshot_time_from_path(path: Path) -> datetime | None:
@@ -57,10 +73,24 @@ def delete_snapshots_older_than(
 ) -> int:
     """Delete persisted snapshot files older than the retention window."""
     target_dir = snapshot_dir or SNAPSHOT_DIR
+    cutoff = (now or datetime.now(MARKET_TIMEZONE)).astimezone(MARKET_TIMEZONE) - timedelta(days=retention_days)
+    github_store = github_snapshot_store()
+    if snapshot_dir is None and github_store:
+        deleted = 0
+        for name in github_store.list_snapshot_names():
+            snapshot_time = snapshot_time_from_path(Path(name))
+            if snapshot_time is None or snapshot_time >= cutoff:
+                continue
+            try:
+                if github_store.delete(name, f"Delete old Polygon snapshot {name}"):
+                    deleted += 1
+            except Exception:
+                LOGGER.exception("Failed to delete old GitHub snapshot name=%s", name)
+        return deleted
+
     if not target_dir.exists():
         return 0
 
-    cutoff = (now or datetime.now(MARKET_TIMEZONE)).astimezone(MARKET_TIMEZONE) - timedelta(days=retention_days)
     deleted = 0
     for path in target_dir.glob("snapshot_*.json"):
         snapshot_time = snapshot_time_from_path(path)
@@ -77,6 +107,15 @@ def delete_snapshots_older_than(
 def recent_snapshots(limit: int = 5, snapshot_dir: Path | None = None) -> list[tuple[datetime, Path]]:
     """Return the most recent persisted snapshots by encoded capture time."""
     target_dir = snapshot_dir or SNAPSHOT_DIR
+    github_store = github_snapshot_store()
+    if snapshot_dir is None and github_store:
+        snapshots = []
+        for name in github_store.list_snapshot_names():
+            snapshot_time = snapshot_time_from_path(Path(name))
+            if snapshot_time is not None:
+                snapshots.append((snapshot_time, target_dir / name))
+        return sorted(snapshots, key=lambda item: item[0], reverse=True)[:limit]
+
     if not target_dir.exists():
         return []
 
@@ -184,3 +223,10 @@ def nearest_snapshot_time(scan_time: datetime, snapshot_dir: Path | None = None,
     if scan_time - nearest > timedelta(minutes=max_age_minutes):
         raise FileNotFoundError(f"Latest snapshot {nearest} is older than {max_age_minutes} minutes")
     return nearest
+
+
+def github_snapshot_store() -> GitHubSnapshotStore | None:
+    config = load_github_snapshot_config()
+    if not config:
+        return None
+    return GitHubSnapshotStore(config)
